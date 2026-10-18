@@ -1,0 +1,14 @@
+{
+  "name": "gann-desk",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Personal trading dashboard: Gann fans, indicators, moon cycles and sentiment for crypto.",
+  "scripts": {
+    "build": "tsc -p .",
+    "check": "tsc -p . --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

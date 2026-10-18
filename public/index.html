@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gann Desk</title>
+  <meta name="description" content="Personal trading dashboard with Gann fans, indicators, moon cycles and sentiment.">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0b0c'/%3E%3Cpath d='M5 27 L27 5 M5 27 L27 16 M5 27 L27 23 M5 27 L16 5' stroke='%2322b3cf' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/js/main.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand" aria-label="Gann Desk">Gann<span>Desk</span></div>
+      <div class="search">
+        <input id="q" type="text" inputmode="search" autocomplete="off" autocapitalize="characters" spellcheck="false"
+          placeholder="Search coin" aria-label="Search coin" role="combobox" aria-controls="results" aria-expanded="false">
+        <ul id="results" class="results" role="listbox" hidden></ul>
+      </div>
+      <div class="quote" aria-live="polite">
+        <span id="price" class="price">–</span>
+        <span id="chg" class="chg"></span>
+      </div>
+      <div class="controls">
+        <div class="seg" id="tf" role="group" aria-label="Timeframe">
+          <button type="button" data-tf="4h">4H</button>
+          <button type="button" data-tf="1d">1D</button>
+          <button type="button" data-tf="1w">1W</button>
+          <button type="button" data-tf="1M">1M</button>
+        </div>
+        <div class="seg" id="scale" role="group" aria-label="Price scale">
+          <button type="button" data-log="1">Log</button>
+          <button type="button" data-log="0">Lin</button>
+        </div>
+        <span id="live" class="live off">Offline</span>
+      </div>
+    </header>
+
+    <nav class="layers" id="layers" aria-label="Chart layers"></nav>
+
+    <div class="body">
+      <section class="chart-wrap" aria-label="Chart">
+        <div id="ohlc" class="ohlc"></div>
+        <div id="chart" class="chart"></div>
+        <div id="status" class="status" role="status" hidden></div>
+        <div id="toast" class="toast" role="status" hidden></div>
+      </section>
+
+      <aside class="side">
+        <section class="card" id="gannCard"></section>
+        <section class="card" id="fngCard"></section>
+        <section class="card" id="moonCard"></section>
+        <p class="foot">Prices from Binance spot USDT pairs. History starts when the coin listed on Binance. Drag to pan, scroll or pinch to zoom, drag the price scale to stretch it, double-click to reset. Not financial advice.</p>
+      </aside>
+    </div>
+  </div>
+</body>
+</html>
