@@ -156,6 +156,10 @@ button { cursor: pointer; }
 .lv .d { font: 11.5px var(--fm); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .lv li.now { background: linear-gradient(90deg, transparent, #202025 18%, #202025 82%, transparent); }
 .lv li.now .nm { font-weight: 600; }
+.lv li.tc { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.lv li.tc .nm { white-space: normal; font-size: 12px; color: var(--muted); }
+.tk { min-width: 34px; padding: 1px 5px; border-radius: 3px; font: 600 11px var(--fm); text-align: center; color: #fff; }
+.tk.hi { background: #c0392b; } .tk.lo { background: #11806f; } .tk.cl { background: #a07400; }
 .lv.moon li { grid-template-columns: 16px minmax(0, 1fr) auto auto; }
 .mi { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #8e8e95; display: grid; place-items: center; font: 700 9px var(--fb); }
 .mi.full { background: #f4f2ea; color: #202226; }

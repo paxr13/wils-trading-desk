@@ -2,8 +2,8 @@ import { Chart, LineSpec, Overlay, SubPane } from './chart.js';
 import { Bar, Pt, TF, TFS, TF_ORDER } from './types.js';
 import { DataError, FngPoint, LiveState, getFearGreed, getKlines, getSymbols, mergeBar, subscribe } from './data.js';
 import { bollinger, closes, ema, macd, rsi, sma } from './indicators.js';
-import { Anchors, ARCS, FAN, LEVEL_ARCS, PRESETS, Preset, arcTop, autoAnchors, fanPrice, validAnchors } from './gann.js';
-import { bandFill, fibOverlay, gannOverlay, moonOverlay } from './overlays.js';
+import { Anchors, ARCS, FAN, LEVEL_ARCS, PRESETS, Pivot, Preset, Projection, arcTop, autoAnchors, clusterProjections, fanPrice, majorPivots, timeProjections, validAnchors } from './gann.js';
+import { bandFill, fibOverlay, gannOverlay, gannTimeOverlay, moonOverlay } from './overlays.js';
 import { moonPhases } from './moon.js';
 import { esc, fmtDate, fmtPct, fmtPrice } from './format.js';
 
@@ -12,7 +12,7 @@ import { esc, fmtDate, fmtPct, fmtPrice } from './format.js';
 type LayerKey =
   | 'fan' | 'arcs' | 'glevels'
   | 'sma20' | 'ema21' | 'sma50' | 'sma100' | 'sma200'
-  | 'bb' | 'fib' | 'moon'
+  | 'gtime' | 'bb' | 'fib' | 'moon'
   | 'vol' | 'rsi' | 'macd' | 'fng';
 
 interface LayerDef {
@@ -27,6 +27,7 @@ const LAYERS: LayerDef[] = [
   { k: 'fan', label: 'Fan', color: '#11806f', group: 'gann' },
   { k: 'arcs', label: 'Arcs', color: '#ef9a2e', group: 'gann' },
   { k: 'glevels', label: 'Levels', color: '#1fa8c4', group: 'gann', title: 'Horizontal and vertical lines from the arcs' },
+  { k: 'gtime', label: 'Pivots & time', color: '#a07400', group: 'gann', title: 'Major swing highs and lows, with 90, 120, 144, 180, 270 and 360-day counts and 2 and 3-year anniversaries from the latest ones. Shaded = several counts landing together.' },
   { k: 'sma20', label: 'SMA 20', color: '#b07c00', group: 'ma' },
   { k: 'ema21', label: 'EMA 21', color: '#2f6fde', group: 'ma' },
   { k: 'sma50', label: 'SMA 50', color: '#8e44ad', group: 'ma' },
@@ -69,7 +70,7 @@ const DEFAULT: State = {
   layers: {
     fan: true, arcs: true, glevels: true,
     sma20: false, ema21: false, sma50: false, sma100: false, sma200: false,
-    bb: false, fib: false, moon: false,
+    gtime: false, bb: false, fib: false, moon: false,
     vol: true, rsi: false, macd: false, fng: false,
   },
   custom: {},
@@ -114,6 +115,8 @@ let bars: Bar[] = [];
 let daily: Bar[] = [];
 let dailySym = '';
 let anchors: Anchors | null = null;
+let pivots: Pivot[] = [];
+let projections: Projection[] = [];
 let fng: FngPoint[] | null = null;
 let fngFailed = false;
 let liveState: LiveState = 'off';
@@ -349,6 +352,8 @@ chart.onTap = (i) => {
 };
 
 function recomputeAnchors(): void {
+  pivots = daily.length ? majorPivots(daily) : [];
+  projections = timeProjections(pivots);
   if (S.preset === 'custom') {
     const c = S.custom[S.sym];
     anchors = validAnchors(c) ? { o: c.o, h: c.h, preset: 'custom' } : null;
@@ -422,6 +427,7 @@ function refresh(): void {
   if (anchors && (S.layers.fan || S.layers.arcs || S.layers.glevels)) {
     overlays.push(gannOverlay(anchors, { fan: S.layers.fan, arcs: S.layers.arcs, levels: S.layers.glevels }));
   }
+  if (S.layers.gtime && pivots.length) overlays.push(gannTimeOverlay(pivots, projections));
   if (S.layers.moon) overlays.push(moonOverlay());
   if (S.layers.fib) overlays.push(fibOverlay());
 
@@ -518,6 +524,7 @@ function renderLive(): void {
 
 function renderSide(): void {
   renderGannCard();
+  renderTimeCard();
   renderFngCard();
   renderMoonCard();
 }
@@ -587,6 +594,39 @@ function renderFngCard(): void {
      <div class="gscale"><span>Extreme fear</span><span>Extreme greed</span></div>
      <p class="kv"><span>Yesterday <b>${ago(1)}</b></span><span>7 days <b>${ago(7)}</b></span><span>30 days <b>${ago(30)}</b></span></p>
      <p class="credit">Data: <a href="https://alternative.me/crypto/fear-and-greed-index/" target="_blank" rel="noopener">Alternative.me</a></p>`;
+}
+
+function renderTimeCard(): void {
+  const el = $('timeCard');
+  el.hidden = !S.layers.gtime;
+  if (!S.layers.gtime) return;
+  const head = '<div class="card-h"><h2>Gann time</h2></div>';
+  if (!pivots.length) {
+    el.innerHTML = head + `<p class="note">${daily.length ? 'No confirmed major swings yet for this coin.' : 'Loading history…'}</p>`;
+    return;
+  }
+  const now = Date.now() / 1000;
+  const groups = clusterProjections(projections, 3 * 86400).filter((g) => g[g.length - 1].t >= now - 86400).slice(0, 6);
+  const src = (p: Projection) => `${p.label} from ${MONTHS_SHORT(p.from.t)} ${p.from.high ? 'high' : 'low'}`;
+  const rows = groups.map((g) => {
+    const days = Math.round((g[0].t - now) / 86400);
+    const rel = days <= 0 ? 'now' : `in ${days}d`;
+    const cls = g.length > 1 ? 'cl' : g[0].from.high ? 'hi' : 'lo';
+    return `<li class="tc"><span class="tk ${cls}">${g.length > 1 ? '\u00d7' + g.length : g[0].label}</span><span class="nm">${esc(g.map(src).join(', '))}</span><span class="p">${fmtDate(g[0].t)}</span><span class="d">${rel}</span></li>`;
+  });
+  const recent = pivots.slice(-4).reverse();
+  el.innerHTML =
+    head +
+    `<h3>Upcoming dates</h3><ul class="lv">${rows.join('') || '<li><span></span><span class="nm">None in the next year</span></li>'}</ul>` +
+    `<h3>Latest major swings</h3><ul class="lv">${recent
+      .map((p) => `<li><span class="sw" style="background:${p.high ? '#c0392b' : '#11806f'}"></span><span class="nm">${p.high ? 'High' : 'Low'}</span><span class="p">${fmtPrice(p.p)}</span><span class="d">${fmtDate(p.t)}</span></li>`)
+      .join('')}</ul>` +
+    '<p class="note">A major swing is the highest high or lowest low for 26 weeks on each side, so the newest one confirms half a year later.</p>';
+}
+
+function MONTHS_SHORT(t: number): string {
+  const d = new Date(t * 1000);
+  return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
 }
 
 function renderMoonCard(): void {

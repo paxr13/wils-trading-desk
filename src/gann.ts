@@ -181,6 +181,59 @@ export function arcEnd(a: Anchors, m: number): number {
   return a.o.t + (ARC_STRETCH * m * Math.log(a.h.p / a.o.p)) / slope(a);
 }
 
+// ---------- Gann time: pivots and day counts ----------
+
+export interface Pivot {
+  t: number;
+  p: number;
+  high: boolean;
+}
+
+export interface Projection {
+  t: number;
+  from: Pivot;
+  label: string; // "144d" or "2y"
+}
+
+export const TIME_COUNTS = [90, 120, 144, 180, 270, 360];
+export const TIME_YEARS = [2, 3];
+
+/** Confirmed major swings: the highest high or lowest low for `w` weeks on each side. */
+export function majorPivots(daily: Bar[], w = 26): Pivot[] {
+  const W = toWeekly(daily);
+  const out: Pivot[] = [];
+  for (const i of pivotHighs(W, w)) out.push({ t: dayOf(daily, W[i].t, W[i].h, true), p: W[i].h, high: true });
+  for (const i of pivotLows(W, w)) out.push({ t: dayOf(daily, W[i].t, W[i].l, false), p: W[i].l, high: false });
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/** Day counts and anniversaries from the most recent `recent` highs and lows. */
+export function timeProjections(pivots: Pivot[], recent = 2): Projection[] {
+  const highs = pivots.filter((p) => p.high).slice(-recent);
+  const lows = pivots.filter((p) => !p.high).slice(-recent);
+  const out: Projection[] = [];
+  for (const pv of [...highs, ...lows]) {
+    for (const d of TIME_COUNTS) out.push({ t: pv.t + d * 86400, from: pv, label: `${d}d` });
+    for (const y of TIME_YEARS) {
+      const dt = new Date(pv.t * 1000);
+      dt.setUTCFullYear(dt.getUTCFullYear() + y);
+      out.push({ t: dt.getTime() / 1000, from: pv, label: `${y}y` });
+    }
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/** Group projections that land within `windowSec` of each other. */
+export function clusterProjections(proj: Projection[], windowSec: number): Projection[][] {
+  const groups: Projection[][] = [];
+  for (const p of proj) {
+    const g = groups[groups.length - 1];
+    if (g && p.t - g[g.length - 1].t <= windowSec) g.push(p);
+    else groups.push([p]);
+  }
+  return groups;
+}
+
 export function validAnchors(a: { o: Pt; h: Pt } | null | undefined): boolean {
   return !!a && a.h.t > a.o.t && a.h.p > a.o.p && a.o.p > 0;
 }

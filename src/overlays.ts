@@ -1,6 +1,6 @@
 import type { DrawApi, Overlay } from './chart.js';
 import { THEME } from './chart.js';
-import { Anchors, ARCS, FAN, LEVEL_ARCS, arcEnd, arcPoint, arcTop, fanPrice } from './gann.js';
+import { Anchors, ARCS, FAN, LEVEL_ARCS, Pivot, Projection, arcEnd, arcPoint, arcTop, clusterProjections, fanPrice } from './gann.js';
 import { moonPhases } from './moon.js';
 import { fmtAxis, fmtShortDate } from './format.js';
 
@@ -135,6 +135,81 @@ export function gannOverlay(a: Anchors, f: GannFlags): Overlay {
         const y = Math.max(l.y, lastY + 16);
         tag(ctx, right - 4, y, l.text, l.color);
         lastY = y;
+      }
+    },
+  };
+}
+
+const PIV_HIGH = '#c0392b';
+const PIV_LOW = '#11806f';
+
+/** Major pivots as arrows, plus Gann day counts projected from the recent ones. */
+export function gannTimeOverlay(pivots: Pivot[], proj: Projection[]): Overlay {
+  return {
+    z: 'below',
+    draw(api: DrawApi) {
+      const { ctx, plot } = api;
+      const right = plot.x + plot.w;
+      const bottom = plot.y + plot.h;
+      const barSec = (api.timeAt(api.to) - api.timeAt(api.from)) / Math.max(1e-9, api.to - api.from);
+      const groups = clusterProjections(proj, Math.max(3 * 86400, barSec * 1.01));
+      ctx.font = THEME.font;
+      let lastLabelX = -1e9;
+      for (const g of groups) {
+        const xs = g.map((p) => api.x(api.idxAt(p.t)));
+        const x0 = Math.min(...xs);
+        const x1 = Math.max(...xs);
+        if (x1 < plot.x - 4 || x0 > right + 4) continue;
+        if (g.length > 1) {
+          const w = Math.max(6, x1 - x0 + 4);
+          ctx.fillStyle = 'rgba(214,160,20,0.20)';
+          ctx.fillRect((x0 + x1) / 2 - w / 2, plot.y, w, plot.h);
+        }
+        for (let k = 0; k < g.length; k++) {
+          const x = Math.round(xs[k]) + 0.5;
+          ctx.strokeStyle = g[k].from.high ? 'rgba(192,57,43,0.55)' : 'rgba(17,128,111,0.6)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([1, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x, plot.y + 30);
+          ctx.lineTo(x, bottom);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        // one label per group along the bottom edge
+        const cx = (x0 + x1) / 2;
+        if (cx - lastLabelX < 40 || cx < plot.x + 14 || cx > right - 14) continue;
+        const text = g.length > 1 ? `×${g.length}` : g[0].label;
+        const w = ctx.measureText(text).width + 8;
+        ctx.fillStyle = g.length > 1 ? '#a07400' : g[0].from.high ? PIV_HIGH : PIV_LOW;
+        ctx.fillRect(cx - w / 2, bottom - 17, w, 14);
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, cx, bottom - 9.5);
+        lastLabelX = cx;
+      }
+      // pivot arrows
+      for (const pv of pivots) {
+        const x = api.x(api.idxAt(pv.t));
+        if (x < plot.x - 8 || x > right + 8) continue;
+        const y = api.y(pv.p) + (pv.high ? -6 : 6);
+        const d = pv.high ? -1 : 1;
+        ctx.fillStyle = pv.high ? PIV_HIGH : PIV_LOW;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + 6, y + d * 9);
+        ctx.lineTo(x + 2.4, y + d * 9);
+        ctx.lineTo(x + 2.4, y + d * 16);
+        ctx.lineTo(x - 2.4, y + d * 16);
+        ctx.lineTo(x - 2.4, y + d * 9);
+        ctx.lineTo(x - 6, y + d * 9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = THEME.text;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = pv.high ? 'bottom' : 'top';
+        ctx.fillText(fmtAxis(pv.p), x, y + d * 19);
       }
     },
   };
