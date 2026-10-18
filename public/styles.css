@@ -156,10 +156,10 @@ button { cursor: pointer; }
 .lv .d { font: 11.5px var(--fm); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .lv li.now { background: linear-gradient(90deg, transparent, #202025 18%, #202025 82%, transparent); }
 .lv li.now .nm { font-weight: 600; }
-.lv.moon li { grid-template-columns: 12px minmax(0, 1fr) auto auto; }
-.mi { width: 11px; height: 11px; border-radius: 50%; border: 1px solid #8e8e95; }
-.mi.full { background: #f4f2ea; }
-.mi.new { background: #1b1b1f; }
+.lv.moon li { grid-template-columns: 16px minmax(0, 1fr) auto auto; }
+.mi { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #8e8e95; display: grid; place-items: center; font: 700 9px var(--fb); }
+.mi.full { background: #f4f2ea; color: #202226; }
+.mi.new { background: #1b1b1f; color: #f4f2ea; }
 
 .fng { display: flex; align-items: baseline; gap: 10px; }
 .fv { font: 600 34px var(--fm); line-height: 1; }

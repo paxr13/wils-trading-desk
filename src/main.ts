@@ -34,7 +34,7 @@ const LAYERS: LayerDef[] = [
   { k: 'sma200', label: 'SMA 200', color: '#b71c1c', group: 'ma' },
   { k: 'bb', label: 'Bollinger', color: '#3b82c4', group: 'tools', title: 'Bollinger Bands, 20 periods, 2 standard deviations' },
   { k: 'fib', label: 'Fibonacci', color: '#a07400', group: 'tools', title: 'Retracement on the swing in view. Zoom or scroll to change the swing.' },
-  { k: 'moon', label: 'Moons', color: '#8c8b88', group: 'tools', title: 'Full and new moons' },
+  { k: 'moon', label: 'Moons', color: '#8c8b88', group: 'tools', title: 'F = full moon, N = new moon. Zoom in to see a line for each.' },
   { k: 'vol', label: 'Volume', color: '#8c8b88', group: 'panes' },
   { k: 'rsi', label: 'RSI', color: '#7e57c2', group: 'panes' },
   { k: 'macd', label: 'MACD', color: '#2962ff', group: 'panes' },
@@ -597,7 +597,7 @@ function renderMoonCard(): void {
   const row = (m: { t: number; full: boolean }) => {
     const days = Math.round((m.t - now) / 86400);
     const rel = days === 0 ? 'today' : days > 0 ? `in ${days}d` : `${-days}d ago`;
-    return `<li><span class="mi ${m.full ? 'full' : 'new'}" aria-hidden="true"></span><span class="nm">${m.full ? 'Full' : 'New'} moon</span><span class="p">${fmtDate(m.t)}</span><span class="d">${rel}</span></li>`;
+    return `<li><span class="mi ${m.full ? 'full' : 'new'}" aria-hidden="true">${m.full ? 'F' : 'N'}</span><span class="nm">${m.full ? 'Full' : 'New'} moon</span><span class="p">${fmtDate(m.t)}</span><span class="d">${rel}</span></li>`;
   };
   el.innerHTML =
     '<div class="card-h"><h2>Moon cycle</h2></div><ul class="lv moon">' +

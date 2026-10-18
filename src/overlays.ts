@@ -150,32 +150,44 @@ export function moonOverlay(): Overlay {
       const moons = moonPhases(t0, t1);
       const barSec = (api.timeAt(api.to) - api.timeAt(api.from)) / Math.max(1e-9, api.to - api.from);
       const gapPx = (api.spacing * 14.77 * 86400) / barSec;
-      const lines = gapPx >= 9;
+      // Three densities: full lines with lettered badges, lettered badges on two rows, or bare ticks.
+      const mode = gapPx >= 16 ? 'lines' : gapPx >= 6 ? 'badges' : 'ticks';
+      const badge = (x: number, y: number, full: boolean, r: number) => {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = full ? '#fbfaf6' : '#2a2c31';
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#6b6a68';
+        ctx.stroke();
+        ctx.fillStyle = full ? '#202226' : '#fbfaf6';
+        ctx.font = `700 ${r >= 6 ? 9 : 8}px 'IBM Plex Sans', system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(full ? 'F' : 'N', x, y + 0.5);
+      };
       for (const m of moons) {
         const x = Math.round(api.x(api.idxAt(m.t))) + 0.5;
         if (x < plot.x || x > plot.x + plot.w) continue;
-        if (!lines) {
-          // zoomed out: a short tick per phase along the top edge
+        if (mode === 'ticks') {
+          // zoomed far out: a short tick per phase along the top edge
           ctx.fillStyle = m.full ? 'rgba(250,249,244,0.95)' : 'rgba(40,42,48,0.7)';
           ctx.fillRect(x - 0.5, plot.y, 1.5, m.full ? 7 : 4);
+          continue;
+        }
+        if (mode === 'badges') {
+          badge(x, plot.y + (m.full ? 8 : 20), m.full, 5);
           continue;
         }
         ctx.strokeStyle = m.full ? 'rgba(120,118,112,0.55)' : 'rgba(40,42,48,0.4)';
         ctx.setLineDash(m.full ? [2, 3] : [5, 4]);
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(x, plot.y + 22);
+        ctx.moveTo(x, plot.y + 24);
         ctx.lineTo(x, plot.y + plot.h);
         ctx.stroke();
         ctx.setLineDash([]);
-        const y = plot.y + 14;
-        ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = m.full ? '#fbfaf6' : '#2a2c31';
-        ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = '#6b6a68';
-        ctx.stroke();
+        badge(x, plot.y + 14, m.full, 7);
       }
     },
   };
