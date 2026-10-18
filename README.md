@@ -1,4 +1,4 @@
-# Gann Desk
+# Wil’s Trading Desk
 
 A personal trading dashboard for higher-timeframe crypto trades.
 

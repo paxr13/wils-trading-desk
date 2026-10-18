@@ -40,7 +40,7 @@ button { cursor: pointer; }
 /* ---------- header ---------- */
 .top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
 .brand { font: 600 15px var(--fb); letter-spacing: -0.01em; white-space: nowrap; }
-.brand span { color: var(--accent); margin-left: 2px; }
+.brand span { color: var(--accent); margin-left: 5px; }
 
 .search { position: relative; width: 200px; }
 #q {

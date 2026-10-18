@@ -481,7 +481,7 @@ function renderQuote(): void {
   const chg = $('chg');
   chg.textContent = `${fmtPct(ch, 2)} ${TFS[S.tf].word}`;
   chg.className = 'chg ' + (ch >= 0 ? 'up' : 'down');
-  document.title = `${base(S.sym)} ${fmtPrice(last.c)} · Gann Desk`;
+  document.title = `${base(S.sym)} ${fmtPrice(last.c)} · Wil’s Trading Desk`;
 }
 
 function renderOhlc(): void {
