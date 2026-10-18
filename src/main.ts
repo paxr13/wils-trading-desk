@@ -3,7 +3,7 @@ import { Bar, Pt, TF, TFS, TF_ORDER } from './types.js';
 import { DataError, FngPoint, LiveState, getFearGreed, getKlines, getSymbols, mergeBar, subscribe } from './data.js';
 import { bollinger, closes, ema, macd, rsi, sma } from './indicators.js';
 import { Anchors, ARCS, FAN, LEVEL_ARCS, PRESETS, Pivot, Preset, Projection, arcTop, autoAnchors, clusterProjections, fanPrice, majorPivots, timeProjections, validAnchors } from './gann.js';
-import { bandFill, fibOverlay, gannOverlay, gannTimeOverlay, moonOverlay } from './overlays.js';
+import { bandFill, fibOverlay, gannOverlay, gannTimeOverlay, gridOverlay, moonOverlay } from './overlays.js';
 import { moonPhases } from './moon.js';
 import { esc, fmtDate, fmtPct, fmtPrice } from './format.js';
 
@@ -12,7 +12,7 @@ import { esc, fmtDate, fmtPct, fmtPrice } from './format.js';
 type LayerKey =
   | 'fan' | 'arcs' | 'glevels'
   | 'sma20' | 'ema21' | 'sma50' | 'sma100' | 'sma200'
-  | 'gtime' | 'bb' | 'fib' | 'moon'
+  | 'gtime' | 'grid' | 'bb' | 'fib' | 'moon'
   | 'vol' | 'rsi' | 'macd' | 'fng';
 
 interface LayerDef {
@@ -27,6 +27,7 @@ const LAYERS: LayerDef[] = [
   { k: 'fan', label: 'Fan', color: '#11806f', group: 'gann' },
   { k: 'arcs', label: 'Arcs', color: '#ef9a2e', group: 'gann' },
   { k: 'glevels', label: 'Levels', color: '#1fa8c4', group: 'gann', title: 'Horizontal and vertical lines from the arcs' },
+  { k: 'grid', label: 'Symmetry grid', color: '#22b3cf', group: 'gann', title: 'Repeating boxes of equal time and equal price ratio from an origin, with arcs and diagonals. Set your own box in the side panel.' },
   { k: 'gtime', label: 'Pivots & time', color: '#a07400', group: 'gann', title: 'Major swing highs and lows, with 90, 120, 144, 180, 270 and 360-day counts and 2 and 3-year anniversaries from the latest ones. Shaded = several counts landing together.' },
   { k: 'sma20', label: 'SMA 20', color: '#b07c00', group: 'ma' },
   { k: 'ema21', label: 'EMA 21', color: '#2f6fde', group: 'ma' },
@@ -59,6 +60,9 @@ interface State {
   preset: Preset;
   layers: Record<LayerKey, boolean>;
   custom: Record<string, { o: Pt; h: Pt }>;
+  grid: Record<string, { o: Pt; c: Pt }>;
+  gridArcs: boolean;
+  gridDiag: boolean;
   recent: string[];
 }
 
@@ -70,10 +74,13 @@ const DEFAULT: State = {
   layers: {
     fan: true, arcs: true, glevels: true,
     sma20: false, ema21: false, sma50: false, sma100: false, sma200: false,
-    gtime: false, bb: false, fib: false, moon: false,
+    gtime: false, grid: false, bb: false, fib: false, moon: false,
     vol: true, rsi: false, macd: false, fng: false,
   },
   custom: {},
+  grid: {},
+  gridArcs: true,
+  gridDiag: true,
   recent: ['NEARUSDT', 'BTCUSDT', 'ETHUSDT', 'SOLUSDT'],
 };
 
@@ -81,7 +88,7 @@ function loadState(): State {
   try {
     const s = JSON.parse(localStorage.getItem('gd:state') || 'null') as Partial<State> | null;
     if (s && typeof s === 'object') {
-      const st: State = { ...DEFAULT, ...s, layers: { ...DEFAULT.layers, ...(s.layers || {}) }, custom: s.custom || {} };
+      const st: State = { ...DEFAULT, ...s, layers: { ...DEFAULT.layers, ...(s.layers || {}) }, custom: s.custom || {}, grid: s.grid || {} };
       if (!TF_ORDER.includes(st.tf)) st.tf = DEFAULT.tf;
       if (!PRESETS.some((p) => p.k === st.preset)) st.preset = DEFAULT.preset;
       if (!/^[A-Z0-9]{1,20}USDT$/.test(st.sym)) st.sym = DEFAULT.sym;
@@ -165,7 +172,7 @@ function buildToolbar(): void {
     if (k === 'fng') ensureFng();
     refresh();
   });
-  $('pick').addEventListener('click', startPick);
+  $('pick').addEventListener('click', () => startPick('fan'));
 }
 
 // ---------- header controls ----------
@@ -309,15 +316,23 @@ function toast(html: string | null): void {
 
 let pickStep = 0;
 let pickO: Pt | null = null;
+let pickKind: 'fan' | 'grid' = 'fan';
 
-function startPick(): void {
+function pickToast(html: string): void {
+  toast(`<span>${html}</span><button type="button" id="pickCancel">Cancel</button>`);
+  $('pickCancel').addEventListener('click', endPick);
+}
+
+function startPick(kind: 'fan' | 'grid' = 'fan'): void {
   if (!bars.length) return;
   chart.pickMode = true;
+  pickKind = kind;
   pickStep = 0;
   pickO = null;
   chartHost.classList.add('picking');
-  toast('<span>Tap the <b>low</b> the fan should start from.</span><button type="button" id="pickCancel">Cancel</button>');
-  $('pickCancel').addEventListener('click', endPick);
+  pickToast(kind === 'grid'
+    ? 'Tap the grid’s <b>origin</b>. A tap near a candle’s high or low snaps to it.'
+    : 'Tap the <b>low</b> the fan should start from.');
 }
 
 function endPick(): void {
@@ -326,9 +341,42 @@ function endPick(): void {
   toast(null);
 }
 
-chart.onTap = (i) => {
+/** Snap a tap to the candle's high or low when it lands within 3% of one; otherwise keep the tapped price. */
+function snap(b: Bar, price: number): Pt {
+  const dh = Math.abs(Math.log(b.h / price));
+  const dl = Math.abs(Math.log(Math.max(b.l, 1e-12) / price));
+  if (Math.min(dh, dl) > 0.03) return { t: b.t, p: price };
+  return { t: b.t, p: dh <= dl ? b.h : b.l };
+}
+
+function onGridTap(b: Bar, price: number): void {
+  const pt = snap(b, price);
+  if (pickStep === 0) {
+    pickO = pt;
+    pickStep = 1;
+    pickToast(`Origin set at <b>${fmtPrice(pt.p)}</b>. Now tap the candle where the <b>first box ends</b>. Its time sets the box width, its price sets the box height.`);
+    return;
+  }
+  const o = pickO as Pt;
+  if (pt.t <= o.t || pt.p === o.p) {
+    pickToast('The box corner has to be a later candle at a different price. Tap again.');
+    return;
+  }
+  S.grid[S.sym] = { o, c: pt };
+  S.layers.grid = true;
+  document.querySelector('button.chip[data-k="grid"]')?.setAttribute('aria-pressed', 'true');
+  save();
+  endPick();
+  refresh();
+}
+
+chart.onTap = (i, price) => {
   const b = bars[i];
   if (!b) return;
+  if (pickKind === 'grid') {
+    onGridTap(b, price);
+    return;
+  }
   if (pickStep === 0) {
     pickO = { t: b.t, p: b.l };
     pickStep = 1;
@@ -427,6 +475,8 @@ function refresh(): void {
   if (anchors && (S.layers.fan || S.layers.arcs || S.layers.glevels)) {
     overlays.push(gannOverlay(anchors, { fan: S.layers.fan, arcs: S.layers.arcs, levels: S.layers.glevels }));
   }
+  const g = gridBox();
+  if (S.layers.grid && g) overlays.push(gridOverlay(g, { arcs: S.gridArcs, diagonals: S.gridDiag }));
   if (S.layers.gtime && pivots.length) overlays.push(gannTimeOverlay(pivots, projections));
   if (S.layers.moon) overlays.push(moonOverlay());
   if (S.layers.fib) overlays.push(fibOverlay());
@@ -524,6 +574,7 @@ function renderLive(): void {
 
 function renderSide(): void {
   renderGannCard();
+  renderGridCard();
   renderTimeCard();
   renderFngCard();
   renderMoonCard();
@@ -594,6 +645,78 @@ function renderFngCard(): void {
      <div class="gscale"><span>Extreme fear</span><span>Extreme greed</span></div>
      <p class="kv"><span>Yesterday <b>${ago(1)}</b></span><span>7 days <b>${ago(7)}</b></span><span>30 days <b>${ago(30)}</b></span></p>
      <p class="credit">Data: <a href="https://alternative.me/crypto/fear-and-greed-index/" target="_blank" rel="noopener">Alternative.me</a></p>`;
+}
+
+/** The grid box for this coin: your own, or the fan's origin to its 1x1 point. */
+function gridBox(): { o: Pt; c: Pt; own: boolean } | null {
+  const own = S.grid[S.sym];
+  if (own && own.c.t > own.o.t && own.c.p !== own.o.p) return { ...own, own: true };
+  return anchors ? { o: anchors.o, c: anchors.h, own: false } : null;
+}
+
+function fmtSpan(sec: number): string {
+  const d = sec / 86400;
+  if (d >= 730) return `${(d / 365.25).toFixed(2)} years (${Math.round(d / 7)} weeks)`;
+  if (d >= 70) return `${Math.round(d / 7)} weeks (${Math.round(d)} days)`;
+  return `${Math.round(d)} days`;
+}
+
+function renderGridCard(): void {
+  const el = $('gridCard');
+  el.hidden = !S.layers.grid;
+  if (!S.layers.grid) return;
+  const g = gridBox();
+  const head = '<div class="card-h"><h2>Symmetry grid</h2>' + (g ? `<span class="pill">${g.own ? 'Your box' : 'From fan'}</span>` : '') + '</div>';
+  const buttons = `<div class="btns"><button type="button" class="btn" id="gridSet">Set grid box</button>${g?.own ? '<button type="button" class="btn ghost" id="gridReset">Use fan anchors</button>' : ''}</div>`;
+  if (!g) {
+    el.innerHTML = head + '<p class="note">No fan anchors for this coin yet. Set a box by tapping an origin and the end of the first box.</p>' + buttons;
+  } else {
+    const T = g.c.t - g.o.t;
+    const U = Math.abs(Math.log(g.c.p / g.o.p));
+    const now = Date.now() / 1000;
+    const price = bars[bars.length - 1]?.c ?? g.o.p;
+    const kNext = Math.floor((now - g.o.t) / T) + 1;
+    const nextV = g.o.t + kNext * T;
+    const j = Math.log(price / g.o.p) / U;
+    const above = g.o.p * Math.exp(Math.ceil(j + 1e-9) * U);
+    const below = g.o.p * Math.exp(Math.floor(j - 1e-9) * U);
+    el.innerHTML =
+      head +
+      `<dl class="anch">
+        <div><dt>Origin</dt><dd>${fmtDate(g.o.t)} · ${fmtPrice(g.o.p)}</dd></div>
+        <div><dt>First box ends</dt><dd>${fmtDate(g.c.t)} · ${fmtPrice(g.c.p)}</dd></div>
+        <div><dt>Box width</dt><dd>${fmtSpan(T)}</dd></div>
+        <div><dt>Box height</dt><dd>×${Math.exp(U).toFixed(2)} in price</dd></div>
+      </dl>
+      <h3>From here</h3>
+      <ul class="lv">
+        <li><span class="sw" style="background:#22b3cf"></span><span class="nm">Grid line above</span><span class="p">${fmtPrice(above)}</span><span class="d">${fmtPct(((above - price) / price) * 100)}</span></li>
+        <li class="now"><span class="sw" style="background:#ececee"></span><span class="nm">Last price</span><span class="p">${fmtPrice(price)}</span><span class="d"></span></li>
+        <li><span class="sw" style="background:#22b3cf"></span><span class="nm">Grid line below</span><span class="p">${fmtPrice(below)}</span><span class="d">${fmtPct(((below - price) / price) * 100)}</span></li>
+        <li><span class="sw" style="background:#ef9a2e"></span><span class="nm">Next time line</span><span class="p">${fmtDate(nextV)}</span><span class="d">in ${Math.max(0, Math.round((nextV - now) / 86400))}d</span></li>
+      </ul>
+      <div class="checks">
+        <label><input type="checkbox" id="gridArcs"${S.gridArcs ? ' checked' : ''}> Arcs</label>
+        <label><input type="checkbox" id="gridDiag"${S.gridDiag ? ' checked' : ''}> Diagonals</label>
+      </div>` +
+      buttons;
+  }
+  $('gridSet').addEventListener('click', () => startPick('grid'));
+  document.getElementById('gridReset')?.addEventListener('click', () => {
+    delete S.grid[S.sym];
+    save();
+    refresh();
+  });
+  document.getElementById('gridArcs')?.addEventListener('change', (e) => {
+    S.gridArcs = (e.target as HTMLInputElement).checked;
+    save();
+    refresh();
+  });
+  document.getElementById('gridDiag')?.addEventListener('change', (e) => {
+    S.gridDiag = (e.target as HTMLInputElement).checked;
+    save();
+    refresh();
+  });
 }
 
 function renderTimeCard(): void {

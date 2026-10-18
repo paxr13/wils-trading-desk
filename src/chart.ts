@@ -40,6 +40,7 @@ export interface DrawApi {
   x(i: number): number;
   iFromX(x: number): number;
   y(p: number): number;
+  priceAt(y: number): number;
   idxAt(t: number): number;
   timeAt(i: number): number;
 }
@@ -331,6 +332,7 @@ export class Chart {
       x: (i) => this.x(i, plotW),
       iFromX: (x) => this.right + (x - plotW) / this.spacing,
       y: (p) => main.y + ((hi - this.tr(p)) / (hi - lo)) * main.h,
+      priceAt: (y) => this.inv(hi - ((y - main.y) / main.h) * (hi - lo)),
       idxAt: (t) => this.idxAt(t),
       timeAt: (i) => this.timeAt(i),
     };

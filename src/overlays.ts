@@ -1,5 +1,6 @@
 import type { DrawApi, Overlay } from './chart.js';
 import { THEME } from './chart.js';
+import type { Pt } from './types.js';
 import { Anchors, ARCS, FAN, LEVEL_ARCS, Pivot, Projection, arcEnd, arcPoint, arcTop, clusterProjections, fanPrice } from './gann.js';
 import { moonPhases } from './moon.js';
 import { fmtAxis, fmtShortDate } from './format.js';
@@ -135,6 +136,150 @@ export function gannOverlay(a: Anchors, f: GannFlags): Overlay {
         const y = Math.max(l.y, lastY + 16);
         tag(ctx, right - 4, y, l.text, l.color);
         lastY = y;
+      }
+    },
+  };
+}
+
+const GRID_COLORS = ['#ef9a2e', '#1fa8c4', '#4caf50', '#11806f', '#3d5bf0', '#a898dd'];
+
+/**
+ * Symmetry grid: boxes of equal time T and equal log-price height U repeated from an origin.
+ * In box units (u = time / T, v = ln(price / origin) / U) every box is a unit square, so
+ * arcs are circles and diagonals are 45° lines through the corners.
+ */
+export function gridOverlay(g: { o: Pt; c: Pt }, opts: { arcs: boolean; diagonals: boolean }): Overlay {
+  return {
+    z: 'below',
+    draw(api: DrawApi) {
+      const { ctx, plot } = api;
+      const right = plot.x + plot.w;
+      const bottom = plot.y + plot.h;
+      const T = g.c.t - g.o.t;
+      const Uraw = Math.log(g.c.p / g.o.p);
+      const U = Math.abs(Uraw);
+      const dir = Uraw >= 0 ? 1 : -1;
+      if (!(T > 0) || !(U > 0)) return;
+      const toPx = (u: number, v: number) => ({ x: api.x(api.idxAt(g.o.t + u * T)), y: api.y(g.o.p * Math.exp(v * U)) });
+      const uAtX = (x: number) => (api.timeAt(api.iFromX(x)) - g.o.t) / T;
+      const vAtY = (y: number) => Math.log(api.priceAt(y) / g.o.p) / U;
+      const u0 = uAtX(plot.x);
+      const u1 = uAtX(right);
+      const vA = vAtY(bottom);
+      const vB = vAtY(plot.y);
+      const v0 = Math.min(vA, vB);
+      const v1 = Math.max(vA, vB);
+      if (![u0, u1, v0, v1].every(Number.isFinite)) return;
+      const color = (n: number) => GRID_COLORS[(((n - 1) % GRID_COLORS.length) + GRID_COLORS.length) % GRID_COLORS.length];
+
+      // diagonals through every corner: v - u = n (rising) and v + u = n (falling)
+      if (opts.diagonals) {
+        ctx.lineWidth = 1;
+        const fam = (sign: 1 | -1, n: number) => {
+          ctx.beginPath();
+          let started = false;
+          for (let x = plot.x; x <= right + 6; x += 6) {
+            const u = uAtX(x);
+            const v = n + sign * u;
+            const y = api.y(g.o.p * Math.exp(v * U));
+            if (!Number.isFinite(y) || y < plot.y - 3000 || y > bottom + 3000) {
+              started = false;
+              continue;
+            }
+            if (started) ctx.lineTo(x, y);
+            else ctx.moveTo(x, y);
+            started = true;
+          }
+          ctx.stroke();
+        };
+        const lo = Math.floor(v0 - u1) - 1;
+        const hi = Math.ceil(v1 - u0) + 1;
+        if (hi - lo < 120) {
+          ctx.strokeStyle = 'rgba(17,128,111,0.38)';
+          for (let n = lo; n <= hi; n++) fam(1, n);
+        }
+        const lo2 = Math.floor(v0 + u0) - 1;
+        const hi2 = Math.ceil(v1 + u1) + 1;
+        if (hi2 - lo2 < 120) {
+          ctx.strokeStyle = 'rgba(61,91,240,0.34)';
+          for (let n = lo2; n <= hi2; n++) fam(-1, n);
+        }
+      }
+
+      // arcs: circles of radius k box units centred on the origin, in the box's direction
+      if (opts.arcs) {
+        const kMax = Math.min(14, Math.ceil(Math.hypot(Math.max(Math.abs(u0), Math.abs(u1)), Math.max(Math.abs(v0), Math.abs(v1)))) + 1);
+        ctx.lineWidth = 1.3;
+        for (let k = 1; k <= kMax; k++) {
+          ctx.strokeStyle = color(k);
+          ctx.beginPath();
+          for (let s = 0; s <= 160; s++) {
+            const th = (Math.PI / 2) * (s / 160);
+            const p = toPx(k * Math.sin(th), dir * k * Math.cos(th));
+            if (s === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          }
+          ctx.stroke();
+        }
+      }
+
+      // time lines
+      ctx.font = THEME.font;
+      ctx.lineWidth = 1.3;
+      const kv0 = Math.ceil(u0);
+      const kv1 = Math.floor(u1);
+      if (kv1 - kv0 < 200) {
+        let lastX = -1e9;
+        for (let k = kv0; k <= kv1; k++) {
+          const x = Math.round(api.x(api.idxAt(g.o.t + k * T))) + 0.5;
+          ctx.strokeStyle = k === 0 ? 'rgba(32,34,38,0.55)' : color(k);
+          ctx.beginPath();
+          ctx.moveTo(x, plot.y);
+          ctx.lineTo(x, bottom);
+          ctx.stroke();
+          if (x - lastX > 64 && x < right - 40) {
+            ctx.fillStyle = THEME.text;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(fmtShortDate(g.o.t + k * T, api.tf === '4h' ? '1d' : api.tf), x + 4, plot.y + 4);
+            lastX = x;
+          }
+        }
+      }
+
+      // price lines
+      const jv0 = Math.ceil(v0);
+      const jv1 = Math.floor(v1);
+      if (jv1 - jv0 < 200) {
+        const dense = jv1 - jv0 > 24;
+        ctx.lineWidth = dense ? 0.8 : 1.3;
+        ctx.globalAlpha = dense ? 0.6 : 1;
+        for (let j = jv0; j <= jv1; j++) {
+          const p = g.o.p * Math.exp(j * U);
+          const y = Math.round(api.y(p)) + 0.5;
+          const c = j === 0 ? 'rgba(32,34,38,0.55)' : color(Math.abs(j));
+          ctx.strokeStyle = c;
+          ctx.beginPath();
+          ctx.moveTo(plot.x, y);
+          ctx.lineTo(right, y);
+          ctx.stroke();
+          if (!dense && y > plot.y + 10 && y < bottom - 10) tag(ctx, right - 4, y, fmtAxis(p), c);
+        }
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 1.3;
+      }
+
+      // origin and corner markers
+      for (const pt of [g.o, g.c]) {
+        const x = api.x(api.idxAt(pt.t));
+        const y = api.y(pt.p);
+        ctx.beginPath();
+        ctx.rect(x - 3.5, y - 3.5, 7, 7);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = '#1fa8c4';
+        ctx.stroke();
       }
     },
   };
